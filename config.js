@@ -1,7 +1,7 @@
 // config.js
 export const config = {
-    UI: "https://piped.video/",
-    sponsorBlock: "https://sponsor.ajay.app/",
-    dearrow: "https://dearrow.ajay.app/",
-    API: "https://pipedapi.leptons.xyz/api/v1/"
+    UI: "https://piped.video/", // This loads the frontend for watch together, displays all videos
+    sponsorBlock: "https://sponsor.ajay.app/", // Blocks all sponsors
+    dearrow: "https://dearrow.ajay.app/", // Shows nonclick titles
+    API: "https://pipedapi.nosebs.ru/api/v1/" // Plays videos & fetches them
 };

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Watch Together</title>
+<meta name="referrer" content="no-referrer">
 <style>
   html, body {
     margin: 0;
@@ -10,21 +11,20 @@
     height: 100%;
     background: #0b0b0b;
     color: white;
-    font-family: system-ui, "Segoe UI", Roboto;
+    font-family: system-ui, Segoe UI, Roboto;
   }
   .app {
     display: grid;
-    grid-template-rows: 64px 1fr;
+    grid-template-rows: 56px 1fr;
     height: 100%;
   }
   header {
     display: flex;
     align-items: center;
-    padding: 0 20px;
+    padding: 0 16px;
     background: #111;
     border-bottom: 1px solid #222;
     font-weight: 600;
-    letter-spacing: .5px;
   }
   iframe {
     width: 100%;
@@ -32,25 +32,84 @@
     border: none;
     background: black;
   }
+  .status {
+    font-size: 12px;
+    opacity: .7;
+    margin-left: auto;
+  }
 </style>
 </head>
 <body>
 
 <div class="app">
-  <header>🎬 Watch Together</header>
-  <iframe id="player" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin allow-presentation"></iframe>
+  <header>
+    🎬 Watch Together
+    <span class="status" id="status">loading…</span>
+  </header>
+
+  <iframe
+    id="player"
+    allow="autoplay; fullscreen"
+    sandbox="allow-scripts allow-presentation"
+  ></iframe>
 </div>
 
 <script>
-  // Replace this with any YouTube video ID
-  const videoId = "hgYhws0AHcg";
+/* ============================
+   CONFIG
+============================ */
 
-  // Pick any Invidious instance you like
-  const invidiousInstance = "https://invidious.nerdvpn.de";
+const VIDEO_ID = "hgYhws0AHcg";
 
-  // Auto-set the iframe
-  const iframe = document.getElementById("player");
-  iframe.src = `${invidiousInstance}/embed/${videoId}`;
+const SOURCES = [
+  { name: "Invidious", url: id => `https://vid.puffyan.us/embed/${id}` },
+  { name: "Invidious", url: id => `https://inv.nadeko.net/embed/${id}` },
+  { name: "Invidious", url: id => `https://invidious.jing.rocks/embed/${id}` },
+  { name: "Piped",     url: id => `https://piped.video/embed/${id}` },
+  { name: "Piped",     url: id => `https://piped.adminforge.de/embed/${id}` }
+];
+
+/* ============================
+   LOGIC
+============================ */
+
+const iframe = document.getElementById("player");
+const status = document.getElementById("status");
+
+let index = 0;
+let timeout;
+
+function loadNext(reason) {
+  clearTimeout(timeout);
+
+  if (index >= SOURCES.length) {
+    status.textContent = "❌ all sources failed";
+    console.error("All video sources failed");
+    return;
+  }
+
+  const source = SOURCES[index++];
+  status.textContent = `trying ${source.name}…`;
+
+  iframe.src = source.url(VIDEO_ID);
+
+  // If it doesn’t load media within 6s → rotate
+  timeout = setTimeout(() => {
+    loadNext("timeout");
+  }, 6000);
+}
+
+// If iframe errors → rotate
+iframe.addEventListener("error", () => loadNext("error"));
+
+// If it loads successfully → stop rotating
+iframe.addEventListener("load", () => {
+  status.textContent = "▶ playing";
+  clearTimeout(timeout);
+});
+
+// Start
+loadNext();
 </script>
 
 </body>

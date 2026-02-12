@@ -29,7 +29,11 @@ button { background:#bb86fc; color:#121212; font-weight:bold; cursor:pointer; }
 <div id="resultsContainer"></div>
 
 <script type="module">
-import { config } from './config.js';
+export const config = {
+  videoAPI: "https://piped.video/",
+  sponsorBlock: "https://sponsor.ajay.app/",
+  pipedAPI: "https://pipedapi.kavin.rocks/api/v1/"
+};
 
 const searchInput = document.getElementById('searchInput');
 const searchButton = document.getElementById('searchButton');
@@ -120,5 +124,6 @@ searchButton.onclick = async () => {
   renderResults(videos);
 };
 </script>
+
 </body>
 </html>

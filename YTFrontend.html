@@ -1,57 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Krynet, LLC | Watch Together</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { background:#121212; color:#eee; font-family: Arial, sans-serif; padding: 1rem; }
-    #resultsContainer { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 1rem; margin-top: 1rem; }
-    .video { cursor: pointer; background: #222; border-radius: 8px; overflow:hidden; transition: transform 0.2s; }
-    .video:hover { transform: scale(1.02); }
-    .video img { width: 100%; display: block; }
-    .info { padding: 0.5rem; }
-    input, button {  
-      font-size: 1rem;  
-      padding: .5rem 1rem;  
-      border-radius: 9999px;  
-      border: none;  
-    }
-    input { width: 60%; background:#222; color:#eee; }
-    button { background:#bb86fc; color:#121212; font-weight:bold; cursor:pointer; }
-    #playerContainer { margin-top: 1rem; position:relative; }
-    iframe { width:100%; height:360px; border:none; border-radius:12px; }
-  </style>
+<meta charset="UTF-8" />
+<title>Krynet, LLC | Watch Together</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+body { background:#121212; color:#eee; font-family: Arial, sans-serif; padding: 1rem; }
+#resultsContainer { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 1rem; margin-top: 1rem; }
+.video { cursor: pointer; background: #222; border-radius: 8px; overflow:hidden; transition: transform 0.2s; }
+.video:hover { transform: scale(1.02); }
+.video img { width: 100%; display: block; }
+.info { padding: 0.5rem; }
+input, button { font-size: 1rem; padding: .5rem 1rem; border-radius: 9999px; border: none; }
+input { width: 60%; background:#222; color:#eee; }
+button { background:#bb86fc; color:#121212; font-weight:bold; cursor:pointer; }
+#playerContainer { margin-top: 1rem; position:relative; }
+iframe { width:100%; height:360px; border:none; border-radius:12px; }
+</style>
 </head>
 <body>
+
 <input type="text" id="searchInput" placeholder="Search YouTube..." />
 <button id="searchButton">Search</button>
+
 <div id="playerContainer"></div>
 <div id="resultsContainer"></div>
+
 <script type="module">
 import { config } from './config.js';
+
 let playerIframe;
 let currentSegments = [];
-let segmentIndex = 0;
 let checkInterval;
+
+// -------------------- PLAYER --------------------
 function createYouTubePlayer(containerId, videoId, options={}) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
+
   playerIframe = document.createElement('iframe');
-  playerIframe.src = `${config.videoAPI}watch?v=${videoId}`;
+  playerIframe.src = `${config.videoAPI}watch?v=${videoId}${options.autoplay ? '&autoplay=1' : ''}`;
   playerIframe.allow = 'autoplay; fullscreen';
   playerIframe.width = options.width || '100%';
   playerIframe.height = options.height || 360;
   container.appendChild(playerIframe);
+
   // Reset SponsorBlock tracking
   currentSegments = [];
-  segmentIndex = 0;
-  // Auto-skip loop every 500ms
   if (checkInterval) clearInterval(checkInterval);
-  checkInterval = setInterval(autoSkipSegments, 500);
-
-  return playerIframe;
+  checkInterval = setInterval(autoSkipSegments, 500); // placeholder
 }
+
+// -------------------- SPONSORBLOCK --------------------
 async function fetchSponsorSegments(videoId) {
   try {
     const res = await fetch(`${config.sponsorBlock}/api/skipSegments?videoID=${videoId}`);
@@ -63,8 +63,14 @@ async function fetchSponsorSegments(videoId) {
     currentSegments = [];
   }
 }
-async function autoSkipSegments() {
-  if (!playerIframe || !currentSegments.length) return;
+
+// Placeholder auto-skip function
+function autoSkipSegments() {
+  // Currently does nothing for iframe embeds.
+  // Use HTML5 player to read currentTime and jump segments.
+}
+
+// -------------------- SEARCH --------------------
 const searchInput = document.getElementById('searchInput');
 const searchButton = document.getElementById('searchButton');
 const resultsContainer = document.getElementById('resultsContainer');
@@ -81,31 +87,37 @@ async function searchVideos(query) {
     return [];
   }
 }
+
 function renderResults(videos) {
   resultsContainer.innerHTML = '';
   if (!videos.length) {
     resultsContainer.innerHTML = '<p>No results found.</p>';
     return;
   }
+
   videos.forEach(video => {
     const vid = video.id;
     const title = video.title;
     const thumb = video.thumbnailUrl || video.thumbnails?.[0]?.url;
+
     const div = document.createElement('div');
     div.className = 'video';
     div.innerHTML = `
       <img src="${thumb}" alt="${title}" />
       <div class="info"><h3>${title}</h3></div>
     `;
+
     div.onclick = async () => {
       playerContainer.innerHTML = '';
       createYouTubePlayer('playerContainer', vid, { autoplay: true, width: '100%', height: 360 });
       await fetchSponsorSegments(vid);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
+
     resultsContainer.appendChild(div);
   });
 }
+
 searchButton.onclick = async () => {
   const q = searchInput.value.trim();
   if (!q) return;
@@ -115,5 +127,6 @@ searchButton.onclick = async () => {
   renderResults(videos);
 };
 </script>
+
 </body>
 </html>

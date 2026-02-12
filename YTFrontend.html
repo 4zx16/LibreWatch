@@ -5,8 +5,8 @@
 <title>Krynet, LLC | Watch Together</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body { background:#121212; color:#eee; font-family: Arial, sans-serif; padding:1rem; }
-#resultsContainer { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:1rem; margin-top:1rem; }
+body { background:#121212; color:#eee; font-family:Arial,sans-serif; padding:1rem; }
+#resultsContainer { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem; margin-top:1rem; }
 .video { cursor:pointer; background:#222; border-radius:8px; overflow:hidden; transition: transform 0.2s; }
 .video:hover { transform: scale(1.02); }
 .video img { width:100%; display:block; }
@@ -34,45 +34,8 @@ const searchButton = document.getElementById('searchButton');
 const resultsContainer = document.getElementById('resultsContainer');
 const playerContainer = document.getElementById('playerContainer');
 
-let sponsorSegments = [];
-let skipInterval = null;
-
-// ------------------ SponsorBlock ------------------
-async function fetchSponsorSegments(videoId) {
-    try {
-        const res = await fetch(`${config.sponsorBlock}/api/skipSegments?videoID=${videoId}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const segments = await res.json();
-        sponsorSegments = segments.sort((a,b) => a.segment[0] - b.segment[0]);
-    } catch(err) {
-        console.warn('SponsorBlock fetch failed:', err);
-        sponsorSegments = [];
-    }
-}
-
-function startAutoSkip() {
-    if(skipInterval) clearInterval(skipInterval);
-    const iframe = playerContainer.querySelector('iframe');
-    if(!iframe) return;
-
-    skipInterval = setInterval(() => {
-        try {
-            // Video element inside iframe may be cross-origin, skip safely if accessible
-            const videoEl = iframe.contentWindow?.document?.querySelector('video');
-            if(!videoEl || !sponsorSegments.length) return;
-            const t = videoEl.currentTime;
-            for(const seg of sponsorSegments) {
-                const [start,end] = seg.segment;
-                if(t >= start && t < end) videoEl.currentTime = end + 0.01;
-            }
-        } catch(err){ /* ignore cross-origin errors */ }
-    }, 200);
-}
-
 // ------------------ Play Video ------------------
 async function playVideo(video) {
-    await fetchSponsorSegments(video.id);
-    playerContainer.innerHTML = '';
     const iframe = document.createElement('iframe');
     iframe.src = `${config.UI}watch?v=${video.id}&autoplay=1`;
     iframe.allow = 'autoplay; fullscreen';
@@ -81,9 +44,8 @@ async function playVideo(video) {
     iframe.style.borderRadius = '12px';
     iframe.style.width = '100%';
     iframe.style.height = '360px';
+    playerContainer.innerHTML = '';
     playerContainer.appendChild(iframe);
-
-    startAutoSkip();
     window.scrollTo({ top:0, behavior:'smooth' });
 }
 
@@ -129,6 +91,5 @@ searchButton.onclick = async () => {
     renderResults(videos);
 };
 </script>
-
 </body>
 </html>

@@ -3,93 +3,122 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Invidious Search + Embed</title>
-
+<title>Watch Together - Native Feel</title>
 <style>
-body{
-  margin:0;
-  background:#111;
-  color:#fff;
-  font-family:system-ui,sans-serif;
-}
-header{
-  background:#222;
-  padding:1rem;
-  text-align:center;
-}
-.searchbar{
-  display:flex;
-  justify-content:center;
-  gap:.5rem;
-  margin:1rem;
-}
-.searchbar input{
-  width:50%;
-  padding:.6rem;
-  border:none;
-  border-radius:6px;
-}
-.searchbar button{
-  padding:.6rem 1rem;
-  border:none;
-  border-radius:6px;
-  background:#ff5c57;
-  color:#fff;
-  cursor:pointer;
-}
-iframe{
-  width:95%;
-  height:40vh;
-  display:block;
-  margin:1rem auto;
-  border:none;
-  border-radius:10px;
-  background:#000;
-}
+body{margin:0;padding:0;background:#111;color:#fff;font-family:sans-serif;}
+#container{max-width:900px;margin:auto;padding:1rem;}
+input,button{padding:.5rem;font-size:1rem;border-radius:5px;border:none;}
+button{background:#ff5c57;color:#fff;cursor:pointer;margin-left:.3rem;}
+#queue{margin-top:1rem;}
+.queue-item{padding:.4rem;background:#222;margin:.2rem 0;border-radius:4px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;}
+.queue-item:hover{background:#333;}
+.queue-remove{cursor:pointer;color:#ff5c57;margin-left:.3rem;}
+iframe{width:95%;height:50vh;margin:1rem auto;display:block;border:none;border-radius:8px;}
 </style>
 </head>
-
 <body>
+<div id="container">
+<h2>Watch Together</h2>
+<div>
+<input id="videoInput" placeholder="Paste YouTube/Invidious URL or ID">
+<button onclick="addVideo()">Add</button>
+<button onclick="nextVideo()">Next</button>
+</div>
+<div id="queue"></div>
+<iframe id="player" allowfullscreen allow="autoplay" sandbox="allow-scripts allow-popups" referrerpolicy="no-referrer"></iframe>
+</div>
 
-<header>
-  <h1>Invidious Search + Player</h1>
-</header>
-
-<!-- SEARCH (HTML NAVIGATION, NO JS FETCH) -->
-<form
-  class="searchbar"
-  method="GET"
-  action="https://invidious.nerdvpn.de/search"
-  target="searchFrame">
-  <input name="q" placeholder="Search YouTube…" required>
-  <button type="submit">Search</button>
-</form>
-
-<!-- SEARCH RESULTS -->
-<iframe
-  name="searchFrame"
-  sandbox="allow-scripts allow-forms allow-same-origin allow-popups">
-</iframe>
-
-<!-- PLAYER -->
-<iframe
-  id="player"
-  allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
-  allowfullscreen>
-</iframe>
-
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
-/*
-  This does NOT scrape.
-  It just lets users click results.
-  Invidious /watch links open in the same iframe,
-  user clicks → copy video ID → paste below if needed.
-*/
-function play(id){
-  document.getElementById("player").src =
-    "https://invidious.nerdvpn.de/embed/" + id
-}
-</script>
+const EMBED="https://invidious.nerdvpn.de/embed/";
+const queueDiv=document.getElementById("queue"), player=document.getElementById("player"), input=document.getElementById("videoInput");
+let queue=[], current=-1, preloaded=[];
 
+// ===== SESSION =====
+let params=new URLSearchParams(window.location.search);
+let session=params.get("session");
+if(!session){session=Math.random().toString(36).substr(2,8);params.set("session",session);history.replaceState(null,null,"?"+params.toString());}
+
+// ===== HELPERS =====
+const extractID=url=>{
+  try{let u=new URL(url);
+    if(u.hostname.includes("youtube.com")||u.hostname.includes("music.youtube.com")) return u.searchParams.get("v");
+    if(u.hostname=="youtu.be") return u.pathname.slice(1);
+    if(u.hostname.includes("invidious")) return u.searchParams.get("v");
+    return url.trim();
+  }catch(e){return url.trim();}
+};
+
+const renderQueue=()=>{queueDiv.innerHTML="";queue.forEach((v,i)=>{let d=document.createElement("div");d.className="queue-item";d.innerHTML=`<span>${i+1}. ${v}</span><span class="queue-remove" onclick="removeVideo(${i})">✕</span>`;d.onclick=()=>playVideo(i);queueDiv.appendChild(d);});};
+
+// ===== QUEUE CONTROLS =====
+const addVideo=()=>{
+  const id=extractID(input.value.trim());
+  if(!id) return;
+  queue.push(id);
+  renderQueue();
+  broadcast({type:"queue",payload:id});
+  if(current===-1) playVideo(0);
+  input.value="";
+};
+
+const removeVideo=i=>{
+  if(i<0||i>=queue.length) return;
+  queue.splice(i,1);
+  renderQueue();
+  broadcast({type:"remove",payload:i});
+  if(current>=queue.length) current=queue.length-1;
+  if(current>=0) playVideo(current);
+};
+
+// ===== VIDEO PLAYBACK & PRELOAD =====
+const preloadCount=3; // preload next 3 videos
+const preloadNext=i=>{
+  for(let j=0;j<preloadCount;j++){
+    let idx=i+j+1;
+    if(idx>=queue.length) break;
+    if(preloaded[idx]) continue;
+    let f=document.createElement("iframe");
+    f.src=EMBED+queue[idx]+"?autoplay=1";
+    f.style.display="none"; f.sandbox="allow-scripts allow-popups"; f.referrerPolicy="no-referrer";
+    document.body.appendChild(f);
+    preloaded[idx]=f;
+  }
+};
+
+const swapPreloaded=i=>{
+  if(preloaded[i]){player.src=preloaded[i].src; preloaded[i].remove(); preloaded[i]=null;}
+  preloadNext(i);
+};
+
+const playVideo=i=>{
+  if(i<0||i>=queue.length) return;
+  current=i;
+  if(preloaded[i]) swapPreloaded(i);
+  else{player.src=EMBED+queue[i]+"?autoplay=1"; preloadNext(i);}
+};
+
+const nextVideo=()=>{
+  if(queue.length==0) return;
+  current=(current+1)%queue.length;
+  playVideo(current);
+};
+
+// ===== SESSION BACKEND =====
+const peer=new Peer(`peer-${session}-${Math.floor(Math.random()*1e4)}`,{host:"0.peerjs.com",secure:true,port:443});
+let conn;
+peer.on("open",id=>{
+  const hostID=`host-${session}`;
+  if(id===hostID) peer.on("connection",c=>c.on("data",handleMsg));
+  else{conn=peer.connect(hostID);conn.on("open",()=>console.log("Connected"));conn.on("data",handleMsg);}
+});
+
+const broadcast=msg=>{if(conn&&conn.open)conn.send(msg);};
+const handleMsg=msg=>{const{type,payload}=msg;switch(type){case"queue":queue.push(payload);renderQueue();break;case"remove":queue.splice(payload,1);renderQueue();break;case"play":playVideo(payload);break;}};
+
+// ===== EVENTS =====
+input.addEventListener("keypress",e=>{if(e.key==="Enter")addVideo();});
+player.addEventListener("ended",nextVideo);
+</script>
 </body>
 </html>

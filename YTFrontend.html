@@ -1,101 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LibreWatch Watch Together 🔗</title>
-<style>
-  html, body { margin:0; padding:0; height:100%; background:#000; display:flex; justify-content:center; align-items:center; }
-  #player { width:80%; height:80%; border:none; }
-</style>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="https://www.youtube.com/iframe_api"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy-First YouTube Player</title>
+  <link rel="icon" href="favicon.ico">
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 2rem; }
+    .player-container { margin-bottom: 2rem; }
+    iframe { display: block; margin-top: 1rem; }
+    button { margin-right: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
+  </style>
 </head>
 <body>
 
-<div id="player"></div>
+  <h1>Privacy-First YouTube Players</h1>
 
-<script>
-(async () => {
-  const videoId = new URLSearchParams(window.location.search).get('v') || 'dQw4w9WgXcQ';
-  const platform = new URLSearchParams(window.location.search).get('p') || 'youtube';
-  let peer, connList = [];
+  <div class="player-container">
+    <label for="video1">Video 1 ID:</label>
+    <input type="text" id="video1" value="dQw4w9WgXcQ">
+    <button data-target="player1">Load Player 1</button>
+    <div id="player1"></div>
+  </div>
 
-  // ----- Player Setup -----
-  let player, pipedIframe;
+  <div class="player-container">
+    <label for="video2">Video 2 ID:</label>
+    <input type="text" id="video2" value="9bZkp7q19f0">
+    <button data-target="player2">Load Player 2</button>
+    <div id="player2"></div>
+  </div>
 
-  function loadYouTube(videoId, start=0) {
-    player = new YT.Player('player', {
-      videoId,
-      playerVars: { autoplay: 1, start },
-      events: {
-        onStateChange: onYouTubeStateChange
-      }
+  <script type="module">
+    import { createYouTubePlayer, removeYouTubePlayer, getSponsorSegments } from './youtubePlayer.js';
+
+    const config = {
+      videoAPI: 'https://piped.kavin.rocks/',
+      sponsorBlock: 'https://sponsor.ajay.app'
+    };
+
+    // Attach buttons dynamically
+    document.querySelectorAll('button[data-target]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const targetId = btn.dataset.target;
+        const inputId = targetId === 'player1' ? 'video1' : 'video2';
+        const videoId = document.getElementById(inputId).value.trim();
+        if (!videoId) return alert('Enter a valid video ID');
+
+        // Remove existing player if exists
+        removeYouTubePlayer(targetId);
+
+        // Create player
+        const { iframe, segments } = await createYouTubePlayer(targetId, videoId, { width: 640, height: 360, autoplay: true });
+
+        console.log(`[YouTubePlayer] Loaded ${videoId} in ${targetId}`);
+        console.log('[YouTubePlayer] SponsorBlock segments:', segments);
+      });
     });
-  }
+  </script>
 
-  function loadPiped(videoId, start=0) {
-    pipedIframe = document.createElement('iframe');
-    pipedIframe.id = 'player';
-    pipedIframe.src = `https://piped.video/embed/${videoId}?autoplay=1&t=${start}`;
-    pipedIframe.sandbox = "allow-scripts allow-same-origin allow-presentation";
-    pipedIframe.width = "100%";
-    pipedIframe.height = "100%";
-    document.body.innerHTML = '';
-    document.body.appendChild(pipedIframe);
-  }
-
-  // ----- PeerJS Setup -----
-  peer = new Peer(undefined, { host: 'peerjs.com', port: 443, secure: true });
-  const roomId = `${platform}_${videoId}`;
-
-  peer.on('open', id => {
-    console.log('PeerJS connected:', id);
-    // For simplicity, we broadcast to everyone in the room manually (replace with proper signaling in production)
-  });
-
-  peer.on('connection', conn => {
-    connList.push(conn);
-    conn.on('data', handleMessage);
-  });
-
-  function connectToPeer(pid) {
-    const c = peer.connect(pid);
-    c.on('open', () => connList.push(c));
-    c.on('data', handleMessage);
-  }
-
-  // ----- Messaging -----
-  function handleMessage(msg) {
-    if(msg.type === 'sync') {
-      if(platform === 'youtube' && player && player.getPlayerState() !== YT.PlayerState.PLAYING) {
-        player.seekTo(msg.time, true);
-        player.playVideo();
-      } else if(platform === 'piped' && pipedIframe) {
-        pipedIframe.src = `https://piped.video/embed/${videoId}?autoplay=1&t=${msg.time}`;
-      }
-    }
-  }
-
-  function broadcastSync(time) {
-    connList.forEach(c => { if(c.open) c.send({type:'sync', time}); });
-  }
-
-  // ----- YouTube API state listener -----
-  function onYouTubeStateChange(event) {
-    if(event.data === YT.PlayerState.PLAYING) {
-      setInterval(() => {
-        const t = Math.floor(player.getCurrentTime());
-        broadcastSync(t);
-      }, 2000);
-    }
-  }
-
-  // ----- Initial load -----
-  if(platform === 'youtube') loadYouTube(videoId);
-  else loadPiped(videoId);
-
-})();
-</script>
 </body>
 </html>

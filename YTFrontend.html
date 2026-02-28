@@ -1,82 +1,103 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LibreWatch Player</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      background-color: #111;
-      color: #eee;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 20px;
-    }
-    #player-container {
-      margin-top: 20px;
-      width: 640px;
-      height: 360px;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    select {
-      margin-top: 10px;
-      padding: 5px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LibreWatch Player w/ SponsorBlock</title>
+<style>
+  body { font-family:sans-serif; background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  #player-container { margin-top:20px; width:640px; height:360px; border-radius:12px; overflow:hidden; border:none; position:relative; }
+  select, input { margin-top:10px; padding:5px; }
+  iframe { width:100%; height:100%; border:none; border-radius:12px; }
+</style>
 </head>
 <body>
-  <h1>LibreWatch YouTube Player</h1>
+<h1>LibreWatch YouTube Player</h1>
 
-  <!-- Select API endpoint -->
-  <label for="endpointSelect">Choose Piped/Invidious endpoint:</label>
-  <select id="endpointSelect">
-    <option value="Piped">Piped</option>
-    <option value="Frontendprivacy">Frontendprivacy</option>
-    <option value="kavin.rocks">kavin.rocks</option>
-    <option value="NerdVPN">NerdVPN</option>
-    <option value="Nadeko">Nadeko</option>
-  </select>
+<label for="endpointSelect">Choose endpoint:</label>
+<select id="endpointSelect">
+  <option value="Piped">Piped</option>
+  <option value="Frontendprivacy">Frontendprivacy</option>
+  <option value="kavin.rocks">kavin.rocks</option>
+  <option value="NerdVPN">NerdVPN</option>
+  <option value="Nadeko">Nadeko</option>
+</select>
 
-  <div id="player-container"></div>
+<label for="videoIdInput">YouTube Video ID:</label>
+<input id="videoIdInput" type="text" placeholder="dQw4w9WgXcQ" value="dQw4w9WgXcQ">
 
-  <script type="module">
-    import { createYouTubePlayer } from './Player/youtubePlayer.js';
-    import { config } from './Player/config.js';
+<div id="player-container"></div>
 
-    const containerId = 'player-container';
-    const selectEl = document.getElementById('endpointSelect');
-    
-    // Default video ID
-    let videoId = 'dQw4w9WgXcQ';
+<script type="module">
+import { config } from './Player/config.js';
 
-    async function loadPlayer() {
-      // Pick endpoint from config based on select value
-      let endpointName = selectEl.value;
-      let endpoint = config.UI.Piped[endpointName] || config.UI.Invidious[endpointName] || config.UI.Piped['Piped'];
+const container = document.getElementById('player-container');
+const selectEl = document.getElementById('endpointSelect');
+const videoInput = document.getElementById('videoIdInput');
 
-      console.log('Using endpoint:', endpoint);
+let currentIframe = null;
+let segments = [];
+let segmentChecker = null;
 
-      // Create player
-      await createYouTubePlayer(containerId, videoId, { width: 640, height: 360, autoplay: false });
+async function loadSponsorSegments(videoId) {
+  try {
+    const res = await fetch(`${config.sponsorBlock}api/skipSegments?videoID=${videoId}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.sort((a,b) => a.segment[0]-b.segment[0]);
+  } catch(e) {
+    console.warn('SponsorBlock fetch failed:', e);
+    return [];
+  }
+}
 
-      // SponsorBlock fetch
-      try {
-        const res = await fetch(`${config.sponsorBlock}/api/skipSegments?videoID=${videoId}`);
-        const segments = res.ok ? await res.json() : [];
-        console.log('SponsorBlock segments:', segments);
-      } catch(e) {
-        console.warn('SponsorBlock fetch failed', e);
+function createIframe(endpoint, videoId) {
+  container.innerHTML = '';
+  const iframe = document.createElement('iframe');
+  iframe.src = `${endpoint}watch?v=${videoId}&autoplay=1`;
+  iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+  iframe.sandbox = 'allow-scripts allow-same-origin allow-presentation';
+  iframe.referrerPolicy = 'no-referrer';
+  container.appendChild(iframe);
+  return iframe;
+}
+
+async function loadPlayer() {
+  const endpointName = selectEl.value;
+  const videoId = videoInput.value.trim();
+  if (!videoId) return alert('Enter a video ID!');
+
+  let endpoint = config.UI.Piped[endpointName] || config.UI.Invidious[endpointName] || config.UI.Piped['Piped'];
+
+  segments = await loadSponsorSegments(videoId);
+  currentIframe = createIframe(endpoint, videoId);
+
+  if(segmentChecker) clearInterval(segmentChecker);
+  
+  // Periodically check if we need to skip a segment (iframe workaround)
+  segmentChecker = setInterval(() => {
+    if(!segments.length) return;
+
+    const now = Date.now()/1000;
+    for(const seg of segments) {
+      const [start,end] = seg.segment;
+      if(now >= start && now <= end) {
+        // Skip to end of segment by reloading iframe with start param (Invidious/Piped supports start time)
+        currentIframe.src = `${endpoint}watch?v=${videoId}&start=${Math.ceil(end)}&autoplay=1`;
+        console.log('Skipped segment', start, end);
+        break;
       }
     }
+  }, 500);
+}
 
-    // Initial load
-    loadPlayer();
+// Reload player when video ID or endpoint changes
+selectEl.addEventListener('change', loadPlayer);
+videoInput.addEventListener('change', loadPlayer);
+videoInput.addEventListener('keypress', (e) => { if(e.key==='Enter') loadPlayer(); });
 
-    // Reload player when endpoint changes
-    selectEl.addEventListener('change', loadPlayer);
-  </script>
+// Initial load
+loadPlayer();
+</script>
 </body>
 </html>

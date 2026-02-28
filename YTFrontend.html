@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LibreWatch Player w/ SponsorBlock</title>
+<title>LibreWatch Player w/ Proxy</title>
 <style>
   body { font-family:sans-serif; background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; padding:20px; }
   #player-container { margin-top:20px; width:640px; height:360px; border-radius:12px; overflow:hidden; border:none; position:relative; }
-  select, input { margin-top:10px; padding:5px; }
+  select, input { margin-top:10px; padding:5px; width:200px; }
   iframe { width:100%; height:100%; border:none; border-radius:12px; }
 </style>
 </head>
 <body>
-<h1>LibreWatch YouTube Player</h1>
+<h1>LibreWatch Player</h1>
 
 <label for="endpointSelect">Choose endpoint:</label>
 <select id="endpointSelect">
@@ -38,23 +38,38 @@ const videoInput = document.getElementById('videoIdInput');
 let currentIframe = null;
 let segments = [];
 let segmentChecker = null;
+let startTime = Date.now();
 
+// Helper: fetch via proxy
+async function proxyFetch(url, proxyName='CorsProxy') {
+  const proxyUrl = config.Proxy[proxyName] || '';
+  const response = await fetch(proxyUrl + encodeURIComponent(url));
+  return response;
+}
+
+// Load SponsorBlock segments via proxy
 async function loadSponsorSegments(videoId) {
   try {
-    const res = await fetch(`${config.sponsorBlock}api/skipSegments?videoID=${videoId}`);
+    const url = `${config.sponsorBlock}api/skipSegments?videoID=${videoId}`;
+    const res = await proxyFetch(url);
     if (!res.ok) return [];
     const data = await res.json();
-    return data.sort((a,b) => a.segment[0]-b.segment[0]);
+    return data.sort((a,b)=>a.segment[0]-b.segment[0]);
   } catch(e) {
     console.warn('SponsorBlock fetch failed:', e);
     return [];
   }
 }
 
-function createIframe(endpoint, videoId) {
+// Create iframe using proxy
+function createIframe(endpoint, videoId, startTime=0) {
   container.innerHTML = '';
   const iframe = document.createElement('iframe');
-  iframe.src = `${endpoint}watch?v=${videoId}&autoplay=1`;
+
+  // Wrap endpoint in proxy to avoid CORS
+  const proxyEndpoint = config.Proxy.CorsProxy + encodeURIComponent(`${endpoint}watch?v=${videoId}&start=${Math.floor(startTime)}&autoplay=1`);
+  
+  iframe.src = proxyEndpoint;
   iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
   iframe.sandbox = 'allow-scripts allow-same-origin allow-presentation';
   iframe.referrerPolicy = 'no-referrer';
@@ -67,23 +82,25 @@ async function loadPlayer() {
   const videoId = videoInput.value.trim();
   if (!videoId) return alert('Enter a video ID!');
 
+  // Pick endpoint
   let endpoint = config.UI.Piped[endpointName] || config.UI.Invidious[endpointName] || config.UI.Piped['Piped'];
 
+  // Fetch SponsorBlock segments
   segments = await loadSponsorSegments(videoId);
-  currentIframe = createIframe(endpoint, videoId);
+
+  currentIframe = createIframe(endpoint, videoId, 0);
 
   if(segmentChecker) clearInterval(segmentChecker);
-  
-  // Periodically check if we need to skip a segment (iframe workaround)
+
+  // Auto-skip loop
   segmentChecker = setInterval(() => {
     if(!segments.length) return;
-
-    const now = Date.now()/1000;
+    const elapsed = (Date.now() - startTime)/1000;
     for(const seg of segments) {
       const [start,end] = seg.segment;
-      if(now >= start && now <= end) {
-        // Skip to end of segment by reloading iframe with start param (Invidious/Piped supports start time)
-        currentIframe.src = `${endpoint}watch?v=${videoId}&start=${Math.ceil(end)}&autoplay=1`;
+      if(elapsed >= start && elapsed <= end) {
+        currentIframe.src = config.Proxy.CorsProxy + encodeURIComponent(`${endpoint}watch?v=${videoId}&start=${Math.ceil(end)}&autoplay=1`);
+        startTime = Date.now(); // reset timer
         console.log('Skipped segment', start, end);
         break;
       }
@@ -91,10 +108,9 @@ async function loadPlayer() {
   }, 500);
 }
 
-// Reload player when video ID or endpoint changes
-selectEl.addEventListener('change', loadPlayer);
-videoInput.addEventListener('change', loadPlayer);
-videoInput.addEventListener('keypress', (e) => { if(e.key==='Enter') loadPlayer(); });
+selectEl.addEventListener('change', () => { startTime=Date.now(); loadPlayer(); });
+videoInput.addEventListener('change', () => { startTime=Date.now(); loadPlayer(); });
+videoInput.addEventListener('keypress', (e) => { if(e.key==='Enter'){ startTime=Date.now(); loadPlayer(); } });
 
 // Initial load
 loadPlayer();

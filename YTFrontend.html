@@ -1,119 +1,111 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LibreWatch Player w/ Proxy</title>
-<style>
-  body { font-family:sans-serif; background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; padding:20px; }
-  #player-container { margin-top:20px; width:640px; height:360px; border-radius:12px; overflow:hidden; border:none; position:relative; }
-  select, input { margin-top:10px; padding:5px; width:200px; }
-  iframe { width:100%; height:100%; border:none; border-radius:12px; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LibreWatch Player</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; display: flex; flex-direction: column; align-items: center; padding: 2rem; }
+    #container { width: 640px; max-width: 95vw; height: 360px; margin-bottom: 1rem; }
+    iframe { width: 100%; height: 100%; border: none; border-radius: 12px; }
+    select, button { padding: 0.5rem; margin: 0.25rem; font-size: 1rem; }
+  </style>
 </head>
 <body>
-<h1>LibreWatch Player</h1>
+  <h1>LibreWatch Player</h1>
+  <div>
+    <label for="endpoint">Endpoint:</label>
+    <select id="endpoint">
+      <option value="https://piped.video/">Piped</option>
+      <option value="https://pipedapi.frontendfriendly.xyz/">Frontendprivacy</option>
+      <option value="https://pipedapi.kavin.rocks/">kavin.rocks</option>
+    </select>
+    <input type="text" id="videoId" placeholder="YouTube Video ID" value="dQw4w9WgXcQ">
+    <button id="loadBtn">Load Video</button>
+  </div>
+  <div id="container"></div>
 
-<label for="endpointSelect">Choose endpoint:</label>
-<select id="endpointSelect">
-  <option value="Piped">Piped</option>
-  <option value="Frontendprivacy">Frontendprivacy</option>
-  <option value="kavin.rocks">kavin.rocks</option>
-  <option value="NerdVPN">NerdVPN</option>
-  <option value="Nadeko">Nadeko</option>
-</select>
+  <script type="module">
+    import { config } from './Player/config.js';
 
-<label for="videoIdInput">YouTube Video ID:</label>
-<input id="videoIdInput" type="text" placeholder="dQw4w9WgXcQ" value="dQw4w9WgXcQ">
+    const container = document.getElementById('container');
+    const endpointSelect = document.getElementById('endpoint');
+    const videoInput = document.getElementById('videoId');
+    const loadBtn = document.getElementById('loadBtn');
 
-<div id="player-container"></div>
+    async function proxyFetch(url, proxyList = ['CorsProxy', 'AllOriginsRaw', 'AllOriginsJSON', 'CorsProxy2']) {
+      for (const proxyName of proxyList) {
+        const proxyUrl = config.Proxy[proxyName];
+        if (!proxyUrl) continue;
+        try {
+          const res = await fetch(proxyUrl + encodeURIComponent(url));
+          if (res.ok) return res;
+        } catch (e) {
+          console.warn(`Proxy ${proxyName} failed:`, e);
+        }
+      }
+      throw new Error('All proxies failed');
+    }
 
-<script type="module">
-import { config } from './Player/config.js';
-
-const container = document.getElementById('player-container');
-const selectEl = document.getElementById('endpointSelect');
-const videoInput = document.getElementById('videoIdInput');
-
-let currentIframe = null;
-let segments = [];
-let segmentChecker = null;
-let startTime = Date.now();
-
-// Helper: fetch via proxy
-async function proxyFetch(url, proxyName='CorsProxy') {
-  const proxyUrl = config.Proxy[proxyName] || '';
-  const response = await fetch(proxyUrl + encodeURIComponent(url));
-  return response;
-}
-
-// Load SponsorBlock segments via proxy
-async function loadSponsorSegments(videoId) {
-  try {
-    const url = `${config.sponsorBlock}api/skipSegments?videoID=${videoId}`;
-    const res = await proxyFetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.sort((a,b)=>a.segment[0]-b.segment[0]);
-  } catch(e) {
-    console.warn('SponsorBlock fetch failed:', e);
-    return [];
-  }
-}
-
-// Create iframe using proxy
-function createIframe(endpoint, videoId, startTime=0) {
-  container.innerHTML = '';
-  const iframe = document.createElement('iframe');
-
-  // Wrap endpoint in proxy to avoid CORS
-  const proxyEndpoint = config.Proxy.CorsProxy + encodeURIComponent(`${endpoint}watch?v=${videoId}&start=${Math.floor(startTime)}&autoplay=1`);
-  
-  iframe.src = proxyEndpoint;
-  iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-  iframe.sandbox = 'allow-scripts allow-same-origin allow-presentation';
-  iframe.referrerPolicy = 'no-referrer';
-  container.appendChild(iframe);
-  return iframe;
-}
-
-async function loadPlayer() {
-  const endpointName = selectEl.value;
-  const videoId = videoInput.value.trim();
-  if (!videoId) return alert('Enter a video ID!');
-
-  // Pick endpoint
-  let endpoint = config.UI.Piped[endpointName] || config.UI.Invidious[endpointName] || config.UI.Piped['Piped'];
-
-  // Fetch SponsorBlock segments
-  segments = await loadSponsorSegments(videoId);
-
-  currentIframe = createIframe(endpoint, videoId, 0);
-
-  if(segmentChecker) clearInterval(segmentChecker);
-
-  // Auto-skip loop
-  segmentChecker = setInterval(() => {
-    if(!segments.length) return;
-    const elapsed = (Date.now() - startTime)/1000;
-    for(const seg of segments) {
-      const [start,end] = seg.segment;
-      if(elapsed >= start && elapsed <= end) {
-        currentIframe.src = config.Proxy.CorsProxy + encodeURIComponent(`${endpoint}watch?v=${videoId}&start=${Math.ceil(end)}&autoplay=1`);
-        startTime = Date.now(); // reset timer
-        console.log('Skipped segment', start, end);
-        break;
+    async function loadSponsorSegments(videoId) {
+      try {
+        const url = `${config.sponsorBlock}api/skipSegments?videoID=${videoId}`;
+        const res = await proxyFetch(url);
+        const data = await res.json();
+        console.log('SponsorBlock segments:', data);
+        return data.sort((a,b)=>a.segment[0]-b.segment[0]);
+      } catch(e) {
+        console.warn('SponsorBlock fetch failed:', e);
+        return [];
       }
     }
-  }, 500);
-}
 
-selectEl.addEventListener('change', () => { startTime=Date.now(); loadPlayer(); });
-videoInput.addEventListener('change', () => { startTime=Date.now(); loadPlayer(); });
-videoInput.addEventListener('keypress', (e) => { if(e.key==='Enter'){ startTime=Date.now(); loadPlayer(); } });
+    function createIframe(endpoint, videoId, startTime=0) {
+      container.innerHTML = '';
+      const iframe = document.createElement('iframe');
 
-// Initial load
-loadPlayer();
-</script>
+      (async () => {
+        const proxyList = ['CorsProxy', 'AllOriginsRaw', 'AllOriginsJSON', 'CorsProxy2'];
+        let loaded = false;
+        for (const proxyName of proxyList) {
+          try {
+            const proxyUrl = config.Proxy[proxyName] + encodeURIComponent(`${endpoint}watch?v=${videoId}&start=${Math.floor(startTime)}&autoplay=1`);
+            iframe.src = proxyUrl;
+            loaded = true;
+            break;
+          } catch(e) {
+            console.warn(`Iframe proxy ${proxyName} failed:`, e);
+          }
+        }
+        if (!loaded) {
+          iframe.src = `${endpoint}watch?v=${videoId}&start=${Math.floor(startTime)}&autoplay=1`;
+          console.warn('All proxies failed, using direct URL (may hit CORS)');
+        }
+      })();
+
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+      iframe.sandbox = 'allow-scripts allow-same-origin allow-presentation';
+      iframe.referrerPolicy = 'no-referrer';
+      container.appendChild(iframe);
+      return iframe;
+    }
+
+    async function loadPlayer() {
+      const videoId = videoInput.value.trim();
+      if (!videoId) return alert('Enter a video ID!');
+      const endpoint = endpointSelect.value;
+
+      const segments = await loadSponsorSegments(videoId);
+      // Currently just logging segments; can add auto-skip logic later
+      console.log('Segments loaded:', segments);
+
+      createIframe(endpoint, videoId);
+    }
+
+    loadBtn.addEventListener('click', loadPlayer);
+
+    // Optionally load default video on page load
+    window.addEventListener('DOMContentLoaded', loadPlayer);
+  </script>
 </body>
 </html>

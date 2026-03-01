@@ -1,179 +1,88 @@
-(() => {
+// Player/youtubePlayer.js
+// Minimal, efficient, async/await
 
-  /* =========================
-     SETTINGS
-  ========================== */
+let currentPlayer=null;
+let sponsorSegments=[];
+let sponsorInterval=null;
 
-  const OWNER = "JamesHickers";
-  const REPO = "Krynetfeatures";
-  const BRANCH = "main";
-  const VERSION_KEY = "libre_ultra_version";
-
-  /* =========================
-     VERSION CHECK
-  ========================== */
-
-  const checkVersion = async () => {
-    try {
-      const url = `https://api.github.com/repos/${OWNER}/${REPO}/commits/${BRANCH}`;
-      const data = await fetch(url, { cache: "no-store" }).then(r => r.json());
-      const latest = data.sha;
-      const stored = localStorage.getItem(VERSION_KEY);
-      if (stored && stored !== latest) {
-        console.log("Upstream updated. Clearing cache.");
-        localStorage.clear();
-      }
-      localStorage.setItem(VERSION_KEY, latest);
-    } catch {}
-  };
-
-  /* =========================
-     CONFIG LOADER
-  ========================== */
-
-const loadConfig = async () => {
+async function loadConfig() {
   try {
-    const raw = await fetch("/LibreWatch/Player/config.js", { cache: "no-store" }).then(r => r.text());
-    const sandbox = {};
-    // Remove "let config;" to prevent redeclaration
-    new Function("sandbox", `
-      ${raw}
-      if (typeof config !== "undefined")
-        sandbox.config = config;
-    `)(sandbox);
-    return Object.freeze(sandbox.config.Player.Misc);
-  } catch (e) {
-    console.error("Failed to load config:", e);
-    return null;
-  }
-};
-  /* =========================
-     NETWORK CORE
-  ========================== */
+    const raw = await fetch('/LibreWatch/Player/config.js', { cache:'no-store' }).then(r=>r.text());
+    const sandbox={};
+    new Function('sandbox', `${raw}; sandbox.config=config.Player.Misc;`)(sandbox);
+    return Object.freeze(sandbox.config);
+  } catch(e) { console.error('Failed to load config:', e); return null; }
+}
 
-  const initCore = (CFG) => {
+async function loadCore(CFG) {
+  if(window.LibreUltra) return;
+  return new Promise((resolve, reject)=>{
+    const s=document.createElement('script');
+    s.src='/LibreWatch/Player/playerCore.js';
+    s.async=true;
+    s.onload=()=>window.LibreUltra ? resolve() : reject('LibreUltra failed');
+    s.onerror=()=>reject('Failed to load playerCore.js');
+    document.head.appendChild(s);
+  });
+}
 
-    const SB_API = CFG.sponsorBlock.API;
-    const DA_API = CFG.dearrow.API;
-    const DA_KEY = CFG.dearrow.KEY;
+function clearPlayer() {
+  if(sponsorInterval) clearInterval(sponsorInterval);
+  if(currentPlayer){ currentPlayer.remove(); currentPlayer=null; }
+  sponsorSegments=[];
+}
 
-    const RATE_LIMIT = 25;
-    const INTERVAL = 60000;
-    const TTL = 1000 * 60 * 5;
-    const MAX_CACHE = 80;
-    const PER_VIDEO_COOLDOWN = 4000;
+function startSponsorWatcher(iframe) {
+  const ytPlayer = iframe.contentWindow?.YT?.getPlayers?.()?.[0];
+  if(!ytPlayer) return;
+  sponsorInterval=setInterval(()=>{
+    const t=ytPlayer.getCurrentTime?.();
+    if(!t) return;
+    for(const seg of sponsorSegments){
+      const [start,end]=seg.segment;
+      if(t>=start && t<end){ ytPlayer.seekTo(end,true); break; }
+    }
+  },300);
+}
 
-    const memory = new Map();
-    const inflight = new Map();
-    const lastHit = new Map();
+export async function createYouTubePlayer(containerId, videoId, options={}) {
+  if(!videoId) return console.error('Invalid video ID');
+  const container=document.getElementById(containerId);
+  if(!container) return console.error('Container not found');
 
-    let tokens = RATE_LIMIT;
-    const bc = "BroadcastChannel" in window ? new BroadcastChannel("libre_ultra") : null;
-    if (bc) bc.onmessage = e => { if(e.data==="t"&&tokens>0) tokens--; };
-    setInterval(()=>tokens=RATE_LIMIT, INTERVAL);
+  const CFG = await loadConfig();
+  if(!CFG) return;
 
-    const allow = ()=>{ if(tokens<=0) return false; tokens--; bc?.postMessage("t"); return true; };
-    const now = ()=>performance.now();
-    const trim = ()=>{ if(memory.size<=MAX_CACHE) return; memory.delete(memory.keys().next().value); };
-    setInterval(()=>{ const t=now(); for(const [k,v] of memory) if(t-v.t>TTL) memory.delete(k); },60000);
+  try { await loadCore(CFG); } catch(e){ console.error(e); return; }
 
-    const core = async (key,url)=>{
-      const cached=memory.get(key);
-      if(cached&&now()-cached.t<TTL) return cached.v;
-      if(lastHit.has(key)&&now()-lastHit.get(key)<PER_VIDEO_COOLDOWN) return null;
-      if(!allow()) return null;
-      if(inflight.has(key)) return inflight.get(key);
+  clearPlayer();
 
-      lastHit.set(key,now());
-      const req=fetch(url,{referrerPolicy:"no-referrer",keepalive:true})
-        .then(r=>r.ok?r.json():null)
-        .then(v=>{ inflight.delete(key); if(v){memory.set(key,{v,t:now()}); trim();} return v; })
-        .catch(()=>{ inflight.delete(key); return null; });
-      inflight.set(key,req);
-      return req;
-    };
+  const autoplay = options.autoplay?1:0;
+  const iframe=document.createElement('iframe');
+  const baseURL = CFG.UI.default || 'https://www.youtube-nocookie.com/embed/';
+  iframe.src=`${baseURL}${videoId}?autoplay=${autoplay}&rel=0&modestbranding=1&enablejsapi=1`;
+  iframe.width=options.width||'640';
+  iframe.height=options.height||'360';
+  iframe.frameBorder='0';
+  iframe.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+  iframe.allowFullscreen=true;
+  iframe.referrerPolicy='no-referrer';
+  iframe.title='YouTube (Privacy-first) Player';
+  iframe.style.cssText='border-radius:12px;border:none;overflow:hidden;';
+  container.appendChild(iframe);
+  currentPlayer=iframe;
 
-    window.LibreUltra = {
-      sponsor: id=>core("sb_"+id, SB_API+"api/skipSegments?videoID="+id),
-      dearrow: id=>core("da_"+id, DA_API+"api/branding?videoID="+id+"&license="+DA_KEY),
-      prefetch: id=>requestIdleCallback?.(()=>window.LibreUltra.dearrow(id))
-    };
-  };
+  // SponsorBlock
+  try {
+    sponsorSegments=(await window.LibreUltra.sponsor(videoId))||[];
+    sponsorSegments.sort((a,b)=>a.segment[0]-b.segment[0]);
+  } catch { sponsorSegments=[]; }
+  startSponsorWatcher(iframe);
 
-  /* =========================
-     EMBEDDED YOUTUBE ADBLOCK
-  ========================== */
+  // Prefetch DeArrow
+  if(CFG.dearrow?.KEY) window.LibreUltra.prefetch(videoId);
 
-  const embedAdblock = (() => {
+  return iframe;
+}
 
-    const sponsorCheckInterval = 300; // ms
-
-    const processEmbed = async (embed, DA_KEY, DA_API) => {
-      if(embed.__dearrow) return;
-
-      const iframe = embed.querySelector("iframe");
-      if(!iframe) return;
-      const match = /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/.exec(iframe.src);
-      if(!match) return;
-
-      const id = match[1];
-
-      // fetch branding data
-      let data;
-      try { data = await window.LibreUltra.dearrow(id); } catch{return;}
-
-      const titleEl = embed.querySelector(".embed-title");
-      const thumbEl = embed.querySelector(".embed-thumbnail");
-      if(!titleEl&&!thumbEl) return;
-
-      const orig={title:titleEl?.textContent,thumb:thumbEl?.src};
-      const newTitle = data?.titles?.[0]?.votes>=0 ? data.titles[0].title.replace(/(^|\s)>(\S)/g,"$1$2"):null;
-      const newThumb = data?.thumbnails?.[0]?.votes>=0&&!data.thumbnails[0].original ?
-        `https://dearrow-thumb.ajay.app/api/v1/getThumbnail?videoID=${id}&time=${data.thumbnails[0].timestamp}&license=${DA_KEY}`
-        : null;
-
-      if(!newTitle&&!newThumb) return;
-
-      const btn=document.createElement("button");
-      btn.className="vc-dearrow-on";
-      btn.innerHTML="...SVG HERE...";
-      btn.onclick=()=>{
-        if(btn.className==="vc-dearrow-on"){
-          if(titleEl&&newTitle) titleEl.textContent=orig.title;
-          if(thumbEl&&newThumb) thumbEl.src=orig.thumb;
-          btn.className="vc-dearrow-off";
-        }else{
-          if(titleEl&&newTitle) titleEl.textContent=newTitle;
-          if(thumbEl&&newThumb) thumbEl.src=newThumb;
-          btn.className="vc-dearrow-on";
-        }
-      };
-      embed.style.position=embed.style.position||"relative";
-      embed.appendChild(btn);
-      if(titleEl&&newTitle) titleEl.textContent=newTitle;
-      if(thumbEl&&newThumb) thumbEl.src=newThumb;
-
-      embed.__dearrow=true;
-    };
-
-    const run = (DA_KEY, DA_API) => {
-      const embeds = document.querySelectorAll(".youtube-embed");
-      for(let i=0;i<embeds.length;i++) processEmbed(embeds[i], DA_KEY, DA_API);
-      setInterval(()=>{ const e=document.querySelectorAll(".youtube-embed"); for(let i=0;i<e.length;i++) processEmbed(e[i], DA_KEY, DA_API); }, sponsorCheckInterval);
-    };
-
-    return { run };
-  })();
-
-  /* =========================
-     BOOT
-  ========================== */
-
-  (async ()=>{
-    await checkVersion();
-    const CFG = await loadConfig();
-    initCore(CFG);
-    embedAdblock.run(CFG.dearrow.KEY, CFG.dearrow.API);
-  })();
-
-})();
+export function destroyPlayer(){ clearPlayer(); }

@@ -4,7 +4,7 @@ let currentSegments = [];
 let sponsorWatcher = null;
 
 async function loadConfig() {
-  const raw = await fetch('./config.js', { cache: 'no-store' }).then(r => r.text());
+  const raw = await fetch('./Player/config.js', { cache: 'no-store' }).then(r => r.text());
   const sandbox = {};
   new Function('sandbox', `
     let config;

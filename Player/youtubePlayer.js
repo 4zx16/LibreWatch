@@ -1,6 +1,4 @@
-// Player/youtubePlayer.js
-// Plain JS, window-based, JSON-config safe, GitHub Pages-friendly
-
+// Minimal, JSON-friendly, window-based
 window.LibreWatchPlayer = (() => {
   let currentPlayer = null;
   let sponsorSegments = [];
@@ -8,12 +6,11 @@ window.LibreWatchPlayer = (() => {
   let CFG = null;
 
   async function loadConfig() {
-    if (CFG) return CFG; // already loaded
+    if (CFG) return CFG;
     try {
-      const res = await fetch('/LibreWatch/Player/config.json', { cache: 'no-store' });
+      const res = await fetch('/LibreWatch/Player/config.json', { cache:'no-store' });
       const json = await res.json();
       CFG = json.Player.Misc;
-      CFG.UI = json.Player.UI; // also keep UI for base URLs
       return CFG;
     } catch(e) { console.error('Failed to load config:', e); return null; }
   }

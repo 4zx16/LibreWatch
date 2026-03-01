@@ -19,17 +19,14 @@ input, button { padding: .5rem; margin: .25rem; font-size: 1rem; }
 </div>
 <div id="player"></div>
 
-<script type="module">
-  // Use absolute repo path from GitHub Pages root
-  import { createYouTubePlayer } from '/LibreWatch/Player/youtubePlayer.js';
-
+<script>
+    const btn = document.getElementById('loadBtn');
   const input = document.getElementById('videoInput');
-  const btn = document.getElementById('loadBtn');
 
   btn.addEventListener('click', async () => {
     const id = input.value.trim();
     if (!id) return alert('Invalid video ID');
-    await createYouTubePlayer('player', id, { autoplay: 1 });
+    await window.LibrewatchPlayer.createYouTubePlayer('player', id, { autoplay: 1 });
   });
 </script>
 

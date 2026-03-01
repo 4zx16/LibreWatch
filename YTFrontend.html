@@ -38,15 +38,15 @@
 
 <div id="player"></div>
 
-<script type="module">
-/* ======= CONFIG ======= */
-export const config = {
+<script>
+// ===== CONFIG =====
+const config = {
   Player: {
     UI: { default: "https://www.youtube-nocookie.com/embed/" },
     Misc: { sponsorBlock: "https://sponsor.ajay.app/" }
   }
 };
-/* ===================== */
+// ==================
 
 const videoInput = document.getElementById("videoInput");
 const loadBtn = document.getElementById("loadBtn");
@@ -55,7 +55,7 @@ const playerContainer = document.getElementById("player");
 let player = null;
 let sponsorSegments = [];
 
-/* Load YouTube IFrame API */
+// Load YouTube IFrame API
 const tag = document.createElement("script");
 tag.src = "https://www.youtube.com/iframe_api";
 document.head.appendChild(tag);
@@ -64,7 +64,7 @@ window.onYouTubeIframeAPIReady = () => {
   loadVideo();
 };
 
-/* Extract video ID */
+// Extract video ID
 function extractVideoID(input) {
   try {
     if (input.includes("youtube.com") || input.includes("youtu.be")) {
@@ -77,7 +77,7 @@ function extractVideoID(input) {
   }
 }
 
-/* Fetch SponsorBlock segments */
+// Fetch SponsorBlock segments
 async function getSponsorSegments(videoId) {
   try {
     const res = await fetch(`${config.Player.Misc.sponsorBlock}api/skipSegments?videoID=${videoId}`);
@@ -89,7 +89,7 @@ async function getSponsorSegments(videoId) {
   }
 }
 
-/* Create YouTube IFrame API player */
+// Create YouTube player using IFrame API
 function createPlayer(videoId) {
   playerContainer.innerHTML = "";
   const div = document.createElement("div");
@@ -99,16 +99,23 @@ function createPlayer(videoId) {
   player = new YT.Player("yt-player", {
     videoId,
     host: config.Player.UI.default.replace("/embed/", ""),
-    playerVars: { autoplay: 1, rel: 0, modestbranding: 1 },
-    events: { onReady: () => startSponsorSkipWatcher() }
+    playerVars: {
+      autoplay: 1,
+      rel: 0,
+      modestbranding: 1,
+    },
+    events: {
+      onReady: () => startSponsorSkipWatcher(),
+    },
   });
 }
 
-/* Real-time SponsorBlock skipping */
+// Real-time SponsorBlock skipping
 function startSponsorSkipWatcher() {
   setInterval(() => {
     if (!player || !player.getCurrentTime) return;
     const current = player.getCurrentTime();
+
     for (const seg of sponsorSegments) {
       const [start, end] = seg.segment;
       if (current >= start && current < end) {
@@ -119,7 +126,7 @@ function startSponsorSkipWatcher() {
   }, 300); // check 3x/sec
 }
 
-/* Main loader */
+// Main loader
 async function loadVideo() {
   const videoId = extractVideoID(videoInput.value);
   if (!videoId) return alert("Enter a valid video ID or URL.");

@@ -1,67 +1,70 @@
-// youtubePlayer.js
-// Fully modular YouTube player with DeArrow + SponsorBlock integration
+// Player/youtubePlayer.js
+// Full JS player for LibreWatch
+// Dynamically imports Player/config.js, then uses playerCore/LibreUltra for SponsorBlock + DeArrow
 
 let currentPlayer = null;
 let currentSegments = [];
 let sponsorWatcherInterval = null;
-let currentBranding = null;
 
-/**
- * Load Player/config.js dynamically and extract Player.Misc
- */
 async function loadConfig() {
-  const raw = await fetch('./Player/config.js', { cache: 'no-store' }).then(r => r.text());
+  // Fix relative path: fetch config.js relative to this JS file
+  const scriptURL = new URL('./config.js', import.meta.url);
+  const raw = await fetch(scriptURL.href, { cache: 'no-store' }).then(r => r.text());
+
   const sandbox = {};
   new Function('sandbox', `
     let config;
     ${raw}
     if(typeof config !== "undefined") sandbox.config = config;
   `)(sandbox);
+
   return Object.freeze(sandbox.config.Player.Misc);
 }
 
-/**
- * Create a YouTube iframe player
- */
+async function ensureLibreUltra(CFG) {
+  if (!window.LibreUltra) {
+    // Load playerCore.js if LibreUltra not initialized
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = new URL('./playerCore.js', import.meta.url).href;
+      script.async = true;
+      script.onload = resolve;
+      document.head.appendChild(script);
+    });
+  }
+}
+
 export async function createYouTubePlayer(containerId, videoId, options = {}) {
   if (!videoId) return console.error('Invalid video ID');
   const container = document.getElementById(containerId);
   if (!container) return console.error('Container not found');
 
-  // Load config
+  // Load config & ensure LibreUltra
   const CFG = await loadConfig();
+  await ensureLibreUltra(CFG);
 
-  // Initialize LibreUltra if needed
-  if (!window.LibreUltra) {
-    const script = document.createElement('script');
-    script.src = './Player/playerCore.js';
-    script.async = true;
-    document.head.appendChild(script);
-    await new Promise(resolve => script.onload = resolve);
-  }
-
-  // Clear previous player & intervals
+  // Clear old player
   container.innerHTML = '';
   if (sponsorWatcherInterval) clearInterval(sponsorWatcherInterval);
-  currentSegments = [];
-  currentBranding = null;
 
-  // Create YouTube iframe (nocookie)
+  // Create iframe player
   const iframe = document.createElement('iframe');
   const autoplay = options.autoplay ? 1 : 0;
   iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay}&rel=0&modestbranding=1&enablejsapi=1`;
   iframe.width = options.width || '640';
   iframe.height = options.height || '360';
   iframe.frameBorder = '0';
-  iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+  iframe.allow =
+    'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
   iframe.allowFullscreen = true;
   iframe.referrerPolicy = 'no-referrer';
   iframe.title = 'YouTube (Privacy-first) Player';
   iframe.style.cssText = 'border-radius:12px;border:none;overflow:hidden;';
+
   container.appendChild(iframe);
   currentPlayer = iframe;
 
-  // Fetch SponsorBlock segments
+  // Fetch SponsorBlock segments via LibreUltra
   try {
     currentSegments = (await window.LibreUltra.sponsor(videoId)) || [];
     currentSegments.sort((a, b) => a.segment[0] - b.segment[0]);
@@ -70,20 +73,12 @@ export async function createYouTubePlayer(containerId, videoId, options = {}) {
     currentSegments = [];
   }
 
-  // Fetch DeArrow branding (titles, thumbnails)
-  try {
-    currentBranding = await window.LibreUltra.dearrow(videoId);
-  } catch (e) {
-    console.warn('DeArrow fetch failed:', e);
-    currentBranding = null;
-  }
-
-  // Auto-skip SponsorBlock segments
+  // Automatic SponsorBlock skipping
+  const ytCheckInterval = 300;
   sponsorWatcherInterval = setInterval(() => {
-    const playerWindow = iframe.contentWindow;
-    if (!playerWindow || !playerWindow.YT || !playerWindow.YT.Player) return;
-    const ytPlayers = playerWindow.YT.getPlayers?.() || [];
-    const ytPlayer = ytPlayers[0];
+    if (!iframe.contentWindow || !iframe.contentWindow.YT) return;
+    const players = iframe.contentWindow.YT.getPlayers?.() || [];
+    const ytPlayer = players[0];
     if (!ytPlayer || !ytPlayer.getCurrentTime) return;
 
     const currentTime = ytPlayer.getCurrentTime();
@@ -94,49 +89,46 @@ export async function createYouTubePlayer(containerId, videoId, options = {}) {
         break;
       }
     }
-  }, 300);
+  }, ytCheckInterval);
 
   return iframe;
 }
 
-/**
- * Replace title & thumbnail if DeArrow data is present
- */
-export function applyDeArrow(embedElement) {
-  if (!currentBranding || !embedElement) return;
-
-  const titleEl = embedElement.querySelector('.embed-title');
-  const thumbEl = embedElement.querySelector('.embed-thumbnail');
-
-  if (!titleEl && !thumbEl) return;
-
-  const orig = { title: titleEl?.textContent, thumb: thumbEl?.src };
-  const newTitle = currentBranding.titles?.[0]?.votes >= 0
-    ? currentBranding.titles[0].title.replace(/(^|\s)>(\S)/g, '$1$2')
-    : null;
-
-  const newThumb = currentBranding.thumbnails?.[0]?.votes >= 0 && !currentBranding.thumbnails[0].original
-    ? `https://dearrow-thumb.ajay.app/api/v1/getThumbnail?videoID=${currentBranding.videoID}&time=${currentBranding.thumbnails[0].timestamp}&license=${currentBranding.license}`
-    : null;
-
-  if (newTitle && titleEl) titleEl.textContent = newTitle;
-  if (newThumb && thumbEl) thumbEl.src = newThumb;
-}
-
-/**
- * Accessor for current SponsorBlock segments
- */
 export function getSponsorSegments() {
   return currentSegments;
 }
 
-/**
- * Destroy current player & cleanup
- */
 export function destroyPlayer() {
   if (sponsorWatcherInterval) clearInterval(sponsorWatcherInterval);
-  if (currentPlayer) currentPlayer.remove();
-  currentPlayer = null;
+  if (currentPlayer) {
+    currentPlayer.remove();
+    currentPlayer = null;
+  }
   currentSegments = [];
-  currentBranding = null;
+}
+
+// Optional: helper to append player dynamically in HTML
+export async function initPlayerUI(containerId, inputId, buttonId) {
+  const input = document.getElementById(inputId);
+  const btn = document.getElementById(buttonId);
+  if (!input || !btn) return;
+
+  const extractVideoID = (val) => {
+    try {
+      if (val.includes('youtube.com') || val.includes('youtu.be')) {
+        const url = new URL(val);
+        return url.searchParams.get('v') || url.pathname.split('/').pop();
+      }
+      return val.trim();
+    } catch {
+      return val.trim();
+    }
+  };
+
+  btn.addEventListener('click', async () => {
+    const id = extractVideoID(input.value);
+    if (!id) return alert('Invalid video ID');
+    if (currentPlayer) destroyPlayer();
+    await createYouTubePlayer(containerId, id, { autoplay: true });
+  });
 }

@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LibreWatch</title>
 <style>
-body{font-family:sans-serif;background:#111;color:#eee;display:flex;flex-direction:column;align-items:center;padding:2rem}
-#player{width:640px;max-width:95vw;height:360px;margin-top:1rem}
-input,button{padding:.5rem;margin:.25rem;font-size:1rem}
+body { font-family: sans-serif; background: #111; color: #eee; display: flex; flex-direction: column; align-items: center; padding: 2rem; }
+#player { width: 640px; max-width: 95vw; height: 360px; margin-top: 1rem; }
+input, button { padding: .5rem; margin: .25rem; font-size: 1rem; }
 </style>
 </head>
 <body>
@@ -20,18 +20,16 @@ input,button{padding:.5rem;margin:.25rem;font-size:1rem}
 <div id="player"></div>
 
 <script type="module">
-import { createYouTubePlayer, destroyPlayer } from '../Player/youtubePlayer.js';
+  import { createYouTubePlayer } from '../Player/youtubePlayer.js';
 
-const input = document.getElementById('videoInput');
-const btn = document.getElementById('loadBtn');
+  const input = document.getElementById('videoInput');
+  const btn = document.getElementById('loadBtn');
 
-btn.addEventListener('click', async () => {
-  const id = input.value.trim();
-  if (!id) return alert('Invalid video ID');
-
-  destroyPlayer();
-  await createYouTubePlayer('player', id, { autoplay: 1 });
-});
+  btn.addEventListener('click', async () => {
+    const id = input.value.trim();
+    if (!id) return alert('Invalid video ID');
+    await createYouTubePlayer('player', id, { autoplay: 1 });
+  });
 </script>
 
 </body>
